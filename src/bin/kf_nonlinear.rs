@@ -1,5 +1,5 @@
 use kfilter::{kalman::Kalman1M, system::StepReturn, KalmanFilter, KalmanPredictInput};
-use kfilter2::{add_noise, circular_motion, circular_motion_vel};
+use kfilter2::{add_noise, circular_motion, circular_motion_vel, plot};
 use nalgebra::*;
 
 const NOISE_SIGMA_SQUARED: f64 = 0.001;
@@ -25,7 +25,12 @@ fn main() {
     // Create a non-linear KF (EKF)
     let mut nonlinear_kalman = Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial);
 
-    for i in 1..100 {
+    let mut t_history = Vec::new();
+    let mut actual_state_history = Vec::new();
+    let mut noisy_state_history = Vec::new();
+    let mut predicted_state_history = Vec::new();
+
+    for i in 0..100 {
         println!("iteration:        {:?}", i);
         let time = (i as f64) * DELTA_TIME;
 
@@ -43,6 +48,12 @@ fn main() {
 
         // Predict the next state by giving it velocity and delta time
         let predicted_state = nonlinear_kalman.predict(input);
+
+        // Save the history for plotting
+        t_history.push(time);
+        actual_state_history.push((actual_state.x, actual_state.y));
+        noisy_state_history.push((noisy_state.x, noisy_state.y));
+        predicted_state_history.push((predicted_state.x, predicted_state.y));
 
         // Get the error
         let error = actual_state - predicted_state;
@@ -62,6 +73,14 @@ fn main() {
     println!("p_initial (Initial state COV):{:?}", p_initial);
     println!("Time Delta:                   {:?}", DELTA_TIME);
     println!("Largest error:                {:?}", largest_error);
+
+    plot(
+        "Position",
+        t_history,
+        actual_state_history,
+        predicted_state_history,
+    )
+    .unwrap();
 }
 
 // Step function for circular motion
