@@ -1,9 +1,22 @@
 use kfilter::{kalman::Kalman1M, system::StepReturn, KalmanFilter, KalmanPredictInput};
 use kfilter2::{add_noise, circular_motion, circular_motion_vel, plot};
-use nalgebra::*;
+use nalgebra::{Matrix2, Vector2};
 
-const NOISE_SIGMA_SQUARED: f64 = 0.001;
+const NOISE_SIGMA_SQUARED: f64 = 0.1;
 const DELTA_TIME: f64 = 0.1;
+const NAME: &str = "Circular Motion Position";
+// R matrix (Measurement covariance)
+// Low R -> High Confidence in the sensor
+// High R -> Low Confidence in the sensor
+const OBSERVATION_COVARIANCE: f64 = 0.03;
+// P matrix (Initial state covariance)
+// Low P -> High Confidence in the state
+// High P -> Low Confidence in the state
+const STATE_COVARIANCE: f64 = 0.01;
+// Q matrix
+// Low Q -> High Confidence in predicted state
+// High Q -> Low Confidence in predicted state
+const PROCESS_COVARIANCE: f64 = 0.07;
 
 // Example of creating an Kalman filter for a circular motion
 // Takes position (u, v) as initial input
@@ -11,16 +24,16 @@ fn main() {
     let mut largest_error = 0.0;
 
     // 1. Observation matrix
-    let h = SMatrix::identity();
+    let h = Matrix2::identity();
 
     // 2. Observation noise COVARIANCE matrix
-    let r = SMatrix::identity();
+    let r = Matrix2::identity() * OBSERVATION_COVARIANCE;
 
     // 3. Initial state
     let x_initial = circular_motion(0.0);
 
     // 4. The initial state COVARIANCE matrix
-    let p_initial = SMatrix::identity();
+    let p_initial = Matrix2::identity() * STATE_COVARIANCE;
 
     // Create a non-linear KF (EKF)
     let mut nonlinear_kalman = Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial);
@@ -30,12 +43,12 @@ fn main() {
     let mut noisy_state_history = Vec::new();
     let mut predicted_state_history = Vec::new();
 
-    for i in 0..100 {
+    for i in 0..(10.0f64 / DELTA_TIME) as i32 {
         println!("iteration:        {:?}", i);
         let time = (i as f64) * DELTA_TIME;
 
-        let input: SVector<f64, 2> = circular_motion_vel(time);
-        let input = Vector3::new(input.x, input.y, DELTA_TIME);
+        let input = circular_motion_vel(time);
+        // let input = Vector3::new(input.x, input.y, time);
 
         let actual_state = circular_motion(time);
         let noisy_state = add_noise(actual_state, NOISE_SIGMA_SQUARED);
@@ -67,32 +80,48 @@ fn main() {
         println!("error             {:?}\n", actual_state - predicted_state);
     }
 
+    // Print the results
     println!("h (Observation matrix):       {:?}", h);
-    println!("r (Observation noise COV):    {:?}", r);
-    println!("x_initial (Initial state):    {:?}", x_initial);
-    println!("p_initial (Initial state COV):{:?}", p_initial);
+    println!("OBSERVATION_COVARIANCE:       {:?}", OBSERVATION_COVARIANCE);
+    println!("STATE_COVARIANCE:             {:?}", STATE_COVARIANCE);
+    println!("PROCESS_COVARIANCE:           {:?}", PROCESS_COVARIANCE);
     println!("Time Delta:                   {:?}", DELTA_TIME);
+    println!("Sensor noise:                 {:?}", NOISE_SIGMA_SQUARED);
     println!("Largest error:                {:?}", largest_error);
 
     plot(
-        "Position",
+        NAME,
         t_history,
         actual_state_history,
+        noisy_state_history,
         predicted_state_history,
     )
     .unwrap();
 }
 
 // Step function for circular motion
-fn step_fn(state: SVector<f64, 2>, input: SVector<f64, 3>) -> StepReturn<f64, 2> {
+fn step_fn(state: Vector2<f64>, input: Vector2<f64>) -> StepReturn<f64, 2> {
     let vx: f64 = input.x;
     let vy = input.y;
-    let dt = input.z;
+
+    // Process Covariance Matrix
+    let q_covariance = Matrix2::identity() * PROCESS_COVARIANCE;
+    // let q_covariance = Matrix2::new(time, 0.0, 0.0, time);
+
+    // Jacbobian
+    let jacobian_vec = Vector2::new(vx, vy);
+    // let jacobian_vec = Vector4::new(0.0, 0.0, 0.0, 0.0);
+
+    // Diagonal Jacobian matrix. NOTE: experiments show less error with this Diagonal Jacobian matrix
+    let jacobian = Matrix2::from_diagonal(&jacobian_vec);
+
+    // // First Column Jacobian
+    // let mut jacobian = Matrix2::zeros();
+    // jacobian.column_mut(0).copy_from(&jacobian_vec);
 
     StepReturn {
-        state: Vector2::new(state.x + vx * dt, state.y + vy * dt),
-        // jacobian: Matrix2::new(vx, 0.0, 0.0, vy),
-        jacobian: Matrix2::new(vx, 0.0, vy, 0.0),
-        covariance: SMatrix::identity(),
+        state,
+        jacobian,
+        covariance: q_covariance,
     }
 }

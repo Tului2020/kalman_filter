@@ -31,29 +31,33 @@ pub fn circular_motion_with_vel_acc(time: f64) -> SVector<f64, 6> {
     Vector6::new(p_x, p_y, v_x, v_y, a_x, a_y)
 }
 
+fn get_random_noise(sigma_squared: f64) -> f64 {
+    sigma_squared * (2.0 * rand::random::<f64>() - 1.0)
+}
+
 pub fn add_noise(state: SVector<f64, 2>, noise: f64) -> SVector<f64, 2> {
-    state + Vector2::new(rand::random::<f64>() * noise, rand::random::<f64>() * noise)
+    state + Vector2::new(get_random_noise(noise), get_random_noise(noise))
 }
 
 pub fn add_noise4(state: SVector<f64, 4>, noise: f64) -> SVector<f64, 4> {
     state
         + Vector4::new(
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
         )
 }
 
 pub fn add_noise6(state: SVector<f64, 6>, noise: f64) -> SVector<f64, 6> {
     state
         + Vector6::new(
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
-            rand::random::<f64>() * noise,
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
+            get_random_noise(noise),
         )
 }
 
@@ -61,6 +65,7 @@ pub fn plot(
     name: &str,
     t_history: Vec<f64>,
     actual_state_history: Vec<(f64, f64)>,
+    noisy_state_history: Vec<(f64, f64)>,
     predicted_state_history: Vec<(f64, f64)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let path_name = format!("./graphs/{name}.png");
@@ -101,23 +106,32 @@ pub fn plot(
         .zip(predicted_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
+    let x_history_noisy: Vec<(f64, f64)> = t_history
+        .iter()
+        .zip(noisy_state_history.iter())
+        .map(&|(&t, &(x, _))| (t, x))
+        .collect();
+    let y_history_noisy: Vec<(f64, f64)> = t_history
+        .iter()
+        .zip(noisy_state_history.iter())
+        .map(&|(&t, &(_, y))| (t, y))
+        .collect();
 
     chart
-        .draw_series(LineSeries::new(x_history_actual, &RED))?
-        .label("actual_state_x")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-    chart
-        .draw_series(LineSeries::new(y_history_actual, &RED))?
-        .label("actual_state_y")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-    chart
-        .draw_series(LineSeries::new(x_history_predicted, &BLACK))?
-        .label("predicted_state_x")
+        .draw_series(LineSeries::new(x_history_actual, &BLACK))?
+        .label("actual_state")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+    chart.draw_series(LineSeries::new(y_history_actual, &BLACK))?;
     chart
-        .draw_series(LineSeries::new(y_history_predicted, &BLACK))?
-        .label("predicted_state_y")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+        .draw_series(LineSeries::new(x_history_predicted, &RED))?
+        .label("predicted_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+    chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
+    chart
+        .draw_series(LineSeries::new(x_history_noisy, &BLUE))?
+        .label("noisy_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+    chart.draw_series(LineSeries::new(y_history_noisy, &BLUE))?;
 
     // Configure the legend
     chart
