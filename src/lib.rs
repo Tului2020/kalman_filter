@@ -86,6 +86,7 @@ pub fn plot(
     chart.configure_mesh().draw()?;
 
     // Draw multiple series on the same plot
+    // ACTUAL state
     let x_history_actual: Vec<(f64, f64)> = t_history
         .iter()
         .zip(actual_state_history.iter())
@@ -96,6 +97,13 @@ pub fn plot(
         .zip(actual_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
+    chart
+        .draw_series(LineSeries::new(x_history_actual, &BLACK))?
+        .label("actual_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+    chart.draw_series(LineSeries::new(y_history_actual, &BLACK))?;
+
+    // PREDICTED state
     let x_history_predicted: Vec<(f64, f64)> = t_history
         .iter()
         .zip(predicted_state_history.iter())
@@ -106,6 +114,13 @@ pub fn plot(
         .zip(predicted_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
+    chart
+        .draw_series(LineSeries::new(x_history_predicted, &RED))?
+        .label("predicted_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+    chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
+
+    // NOISY state
     let x_history_noisy: Vec<(f64, f64)> = t_history
         .iter()
         .zip(noisy_state_history.iter())
@@ -116,17 +131,6 @@ pub fn plot(
         .zip(noisy_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
-
-    chart
-        .draw_series(LineSeries::new(x_history_actual, &BLACK))?
-        .label("actual_state")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
-    chart.draw_series(LineSeries::new(y_history_actual, &BLACK))?;
-    chart
-        .draw_series(LineSeries::new(x_history_predicted, &RED))?
-        .label("predicted_state")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-    chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
     chart
         .draw_series(LineSeries::new(x_history_noisy, &BLUE))?
         .label("noisy_state")
