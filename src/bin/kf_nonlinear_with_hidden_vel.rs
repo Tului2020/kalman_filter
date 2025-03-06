@@ -4,21 +4,21 @@ use kfilter2::{add_noise, circular_motion, circular_motion_vel, plot};
 use nalgebra::{Matrix2, Vector2, Vector3};
 use statrs::statistics::Statistics;
 
-const NOISE_SIGMA_SQUARED: f64 = 0.1;
+const NOISE_SIGMA_SQUARED: f64 = 0.10;
 const DELTA_TIME: f64 = 0.1;
 const NAME: &str = "Circular Motion Position and Hidden Velocity";
 // R matrix (Measurement covariance)
 // Low R -> High Confidence in the sensor
 // High R -> Low Confidence in the sensor
-const OBSERVATION_COVARIANCE: f64 = 0.08;
+const OBSERVATION_COVARIANCE: f64 = 0.2;
 // P matrix (Initial state covariance)
 // Low P -> High Confidence in the state
 // High P -> Low Confidence in the state
-const STATE_COVARIANCE: f64 = 0.1;
+const STATE_COVARIANCE: f64 = 0.04;
 // Q matrix
 // Low Q -> High Confidence in predicted state
 // High Q -> Low Confidence in predicted state
-const PROCESS_COVARIANCE: f64 = 0.3;
+const PROCESS_COVARIANCE: f64 = 0.1;
 // Show step results
 const SHOW_STEP_RESULTS: bool = false;
 
@@ -42,10 +42,8 @@ fn main() {
     let dt = args.delta_time;
 
     // Error tracking
-    let mut error_by_per = 0.0;
-    let mut raw_error_by_per = 0.0;
-    let mut largest_raw_error = 0.0;
-    let mut errors: Vec<f64> = Vec::new();
+    let mut largest_error = 0.0;
+    let mut errors = Vec::new();
 
     // 1. Observation matrix
     let h = Matrix2::identity();
@@ -93,12 +91,15 @@ fn main() {
 
         // Get the error
         let raw_error = actual_next_state - predicted_state;
+        errors.push(raw_error.x.powi(2));
+        errors.push(raw_error.y.powi(2));
+
         let error = raw_error.component_div(&actual_next_state) * 100.0;
         for j in 0..raw_error.len() {
             let raw_e = raw_error[j].abs();
 
-            if raw_e > largest_raw_error {
-                largest_raw_error = raw_e;
+            if raw_e > largest_error {
+                largest_error = raw_e;
 
                 if !SHOW_STEP_RESULTS {
                     println!("iteration:        {:?}", i);
@@ -107,25 +108,6 @@ fn main() {
                     println!("noisy_next_state: {:?}", noisy_next_state);
                     println!("predicted_state   {:?}", predicted_state);
                     println!("raw error         {:?}\n", raw_error);
-                }
-            }
-
-            let e = error[j].abs();
-
-            errors.push(e);
-
-            if e > error_by_per {
-                raw_error_by_per = raw_error[j].abs();
-
-                error_by_per = e;
-
-                if !SHOW_STEP_RESULTS {
-                    println!("iteration:        {:?}", i);
-                    println!("current state:    {:?}", nonlinear_kalman.state());
-                    println!("actual_next_state:{:?}", actual_next_state);
-                    println!("noisy_next_state: {:?}", noisy_next_state);
-                    println!("predicted_state   {:?}", predicted_state);
-                    println!("percent error     {:?}\n", error);
                 }
             }
         }
@@ -149,13 +131,10 @@ fn main() {
     println!("Time Delta:                   {:?}", dt);
     println!("Sensor noise:                 {:?}", noise_sigma_squared);
     println!("\n------------------------- Error -------------------------");
-    let error_mean = errors.clone().mean();
-    let error_std = errors.std_dev();
-    println!("Mean:                         {:.2}%", error_mean);
-    println!("Std:                          {:.2}%", error_std);
-    println!("Largest (percent):            {:.2}%", error_by_per);
-    println!("Largest RAW (percent):        {:?}", raw_error_by_per);
-    println!("Largest RAW:                  {:?}\n", largest_raw_error);
+    let raw_mse = errors.mean();
+    println!("Largest:                      {:?}", largest_error);
+    println!("MSE:                          {:?}", raw_mse);
+    println!("RMSE:                         {:?}\n", raw_mse.sqrt());
 
     // Plot the results
     plot(
