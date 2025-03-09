@@ -65,7 +65,7 @@ pub fn plot(
     name: &str,
     t_history: Vec<f64>,
     actual_state_history: Vec<(f64, f64)>,
-    noisy_state_history: Vec<(f64, f64)>,
+    measured_state_history: Vec<(f64, f64)>,
     predicted_state_history: Vec<(f64, f64)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let path_name = format!("./graphs/{name}.png");
@@ -120,22 +120,22 @@ pub fn plot(
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
     chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
 
-    // NOISY state
-    let x_history_noisy: Vec<(f64, f64)> = t_history
+    // MEASURED state
+    let x_history_measured: Vec<(f64, f64)> = t_history
         .iter()
-        .zip(noisy_state_history.iter())
+        .zip(measured_state_history.iter())
         .map(&|(&t, &(x, _))| (t, x))
         .collect();
-    let y_history_noisy: Vec<(f64, f64)> = t_history
+    let y_history_measured: Vec<(f64, f64)> = t_history
         .iter()
-        .zip(noisy_state_history.iter())
+        .zip(measured_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
     chart
-        .draw_series(LineSeries::new(x_history_noisy, &BLUE))?
-        .label("noisy_state")
+        .draw_series(LineSeries::new(x_history_measured, &BLUE))?
+        .label("measured_state")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
-    chart.draw_series(LineSeries::new(y_history_noisy, &BLUE))?;
+    chart.draw_series(LineSeries::new(y_history_measured, &BLUE))?;
 
     // Configure the legend
     chart
