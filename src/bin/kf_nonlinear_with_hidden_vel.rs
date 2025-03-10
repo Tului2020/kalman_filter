@@ -1,11 +1,11 @@
 use clap::{command, Parser};
 use kfilter::{kalman::Kalman1M, system::StepReturn, KalmanFilter, KalmanPredictInput};
-use kfilter2::{add_noise, circular_motion, circular_motion_vel, plot};
+use kfilter2::{add_noise, circular_motion, plot};
 use nalgebra::{Matrix2, Vector2, Vector3};
 use statrs::statistics::Statistics;
 
 /// How much noise to add to the system
-const NOISE_SIGMA_SQUARED: f64 = 0.10;
+const NOISE_SIGMA_SQUARED: f64 = 0.1;
 
 /// Time step
 const DELTA_TIME: f64 = 0.1;
@@ -16,7 +16,7 @@ const NAME: &str = "Circular Motion Position and Hidden Velocity";
 // R matrix (Measurement covariance)
 // Low R -> High Confidence in the sensor
 // High R -> Low Confidence in the sensor
-const OBSERVATION_COVARIANCE: f64 = 0.2;
+const OBSERVATION_COVARIANCE: f64 = 0.1;
 
 // P matrix (Initial state covariance)
 // Low P -> High Confidence in the state
@@ -26,7 +26,7 @@ const STATE_COVARIANCE: f64 = 0.04;
 // Q matrix
 // Low Q -> High Confidence in predicted state
 // High Q -> Low Confidence in predicted state
-const PROCESS_COVARIANCE: f64 = 0.1;
+const PROCESS_COVARIANCE: f64 = 0.04;
 
 // Show step results
 const SHOW_STEP_RESULTS: bool = false;
@@ -58,14 +58,16 @@ fn main() {
     let mut largest_error = 0.0;
     let mut errors: Vec<(f64, f64)> = Vec::new();
 
+    // Initialize state
+    let x_initial = circular_motion(0.0);
+    let mut state = State::new(x_initial.x, x_initial.y, 0.0);
+
     // Setup EKF
     let mut ekf = {
         // Observation matrix
         let h = Matrix2::identity();
         // Observation noise COVARIANCE matrix
         let r: Covariance = Matrix2::identity() * OBSERVATION_COVARIANCE;
-        // Initial state
-        let x_initial: StateVector = circular_motion(0.0);
         // The initial state COVARIANCE matrix
         let p_initial: Covariance = Matrix2::identity() * STATE_COVARIANCE;
         // Create a non-linear KF (EKF)
@@ -109,14 +111,17 @@ fn main() {
                 let (e_x, e_y) = errors[i as usize];
                 println!("iteration:                {:?}", i);
                 println!("current state:            {:?}", ekf.state());
-                println!("actual_current_state:     {:?}", actual_current_state);
-                println!("measured_current_state:   {:?}", measured_current_state);
+                println!("actual_state:             {:?}", actual_current_state);
+                println!("measured_state:           {:?}", measured_current_state);
                 println!("predicted_state           [[{p_x}, {p_y}]]");
                 println!("error                     [[{e_x}, {e_y}]]\n");
             }
 
             // 2. run correction/update
-            ekf.update(measured_current_state);
+            let current_state = ekf.update(measured_current_state);
+
+            // 3. Update "state" with new state
+            state.update(current_state.x, current_state.y, time_current);
         } else {
             // Otherwise set intial predicted state to the measured state
             predicted_state_history.push((measured_current_state.x, measured_current_state.y));
@@ -128,15 +133,15 @@ fn main() {
             let (e_x, e_y) = errors[i as usize];
             println!("iteration:                {:?}", i);
             println!("current state:            {:?}", ekf.state());
-            println!("actual_current_state:     {:?}", actual_current_state);
-            println!("measured_current_state:   {:?}", measured_current_state);
+            println!("actual__state:            {:?}", actual_current_state);
+            println!("measured_state:           {:?}", measured_current_state);
             println!("predicted_state           [[{p_x}, {p_y}]]");
             println!("error                     [[{e_x}, {e_y}]]\n");
         }
 
         // Predict next state
-        let input = circular_motion_vel(time_current);
-        let input = Vector3::new(input.x, input.y, dt);
+        let velocity = state.velocity();
+        let input = Vector3::new(velocity.x, velocity.y, dt);
         let predicted_state = ekf.predict(input).clone();
         predicted_state_history.push((predicted_state.x, predicted_state.y));
 
@@ -194,5 +199,64 @@ fn step_fn(state: StateVector, input: Vector3<f64>) -> StepReturn<f64, 2> {
         state: state + jacobian_vec * dt,
         jacobian,
         covariance: q_covariance,
+    }
+}
+
+/// State struct to keep track of the current, previous, and previous previous state
+#[derive(Clone)]
+pub struct State {
+    current_x: f64,
+    current_y: f64,
+    current_t: f64,
+    previous_x: f64,
+    previous_y: f64,
+    previous_t: f64,
+}
+
+impl State {
+    /// Create a new state
+    pub fn new(x: f64, y: f64, timestamp: f64) -> Self {
+        Self {
+            current_x: x,
+            current_y: y,
+            current_t: timestamp,
+            previous_x: x,
+            previous_y: y,
+            previous_t: timestamp - 1.0,
+        }
+    }
+
+    /// Update the state
+    pub fn update(&mut self, x: f64, y: f64, timestamp: f64) {
+        self.previous_x = self.current_x;
+        self.previous_y = self.current_y;
+        self.previous_t = self.current_t;
+        self.current_x = x;
+        self.current_y = y;
+        self.current_t = timestamp;
+    }
+
+    /// Get the current velocty
+    pub fn velocity(&self) -> Vector2<f64> {
+        let dt = self.current_t - self.previous_t;
+        let vx = (self.current_x - self.previous_x) / dt;
+        let vy = (self.current_y - self.previous_y) / dt;
+        Vector2::new(vx, vy)
+    }
+
+    /// Get the current state
+    pub fn current(&self) -> StateVector {
+        Vector2::new(self.current_x, self.current_y)
+    }
+
+    /// Get the previous state
+    pub fn previous(&self) -> StateVector {
+        Vector2::new(self.previous_x, self.previous_y)
+    }
+}
+
+impl From<State> for StateVector {
+    fn from(state: State) -> Self {
+        Vector2::new(state.current_x, state.current_y)
     }
 }
