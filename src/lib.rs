@@ -35,30 +35,12 @@ fn get_random_noise(sigma_squared: f64) -> f64 {
     sigma_squared * (2.0 * rand::random::<f64>() - 1.0)
 }
 
-pub fn add_noise(state: SVector<f64, 2>, noise: f64) -> SVector<f64, 2> {
-    state + Vector2::new(get_random_noise(noise), get_random_noise(noise))
-}
-
-pub fn add_noise4(state: SVector<f64, 4>, noise: f64) -> SVector<f64, 4> {
-    state
-        + Vector4::new(
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-        )
-}
-
-pub fn add_noise6(state: SVector<f64, 6>, noise: f64) -> SVector<f64, 6> {
-    state
-        + Vector6::new(
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-            get_random_noise(noise),
-        )
+pub fn add_noise<const N: usize>(state: SVector<f64, N>, noise: f64) -> SVector<f64, N> {
+    let mut noisy_vec: Vec<f64> = Vec::with_capacity(N + 1);
+    for _ in 0..N {
+        noisy_vec.push(get_random_noise(noise));
+    }
+    state + SVector::from_vec(noisy_vec)
 }
 
 pub fn plot(

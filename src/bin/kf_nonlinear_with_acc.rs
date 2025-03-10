@@ -1,7 +1,5 @@
 use kfilter::{kalman::Kalman1M, system::StepReturn, KalmanFilter, KalmanPredictInput};
-use kfilter2::{
-    add_noise6, circular_motion_acc, circular_motion_vel, circular_motion_with_vel_acc,
-};
+use kfilter2::{add_noise, circular_motion_acc, circular_motion_vel, circular_motion_with_vel_acc};
 use nalgebra::*;
 
 const NOISE_SIGMA_SQUARED: f64 = 0.0001;
@@ -42,7 +40,7 @@ fn main() {
         );
 
         let actual_state = circular_motion_with_vel_acc(time);
-        let noisy_state = add_noise6(actual_state, NOISE_SIGMA_SQUARED);
+        let noisy_state = add_noise(actual_state, NOISE_SIGMA_SQUARED);
         println!("current state:    {:?}", nonlinear_kalman.state());
         println!("actual_state:     {:?}", actual_state);
         println!("noisy_state:      {:?}", noisy_state);
