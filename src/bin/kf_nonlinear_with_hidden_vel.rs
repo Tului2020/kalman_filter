@@ -31,6 +31,10 @@ const PROCESS_COVARIANCE: f64 = 0.1;
 // Show step results
 const SHOW_STEP_RESULTS: bool = false;
 
+/// type alias for state vector
+type StateVector = Vector2<f64>;
+type Covariance = Matrix2<f64>;
+
 /// A simple CLI for passing arguments
 #[derive(Parser, Debug)]
 #[command(name = "ekf")]
@@ -45,29 +49,28 @@ struct Args {
 // Example of creating an Kalman filter for a circular motion
 // Takes position (u, v) as initial input and velocity (sx, sy) as the hidden state
 fn main() {
+    // Parse the arguments
     let args = Args::parse();
-
     let noise_sigma_squared = args.noise_sigma_squared;
     let dt = args.delta_time;
 
     // Error tracking
     let mut largest_error = 0.0;
-    let mut errors = Vec::new();
+    let mut errors: Vec<(f64, f64)> = Vec::new();
 
-    // 1. Observation matrix
-    let h = Matrix2::identity();
-
-    // 2. Observation noise COVARIANCE matrix
-    let r = Matrix2::identity() * OBSERVATION_COVARIANCE;
-
-    // 3. Initial state
-    let x_initial = circular_motion(0.0);
-
-    // 4. The initial state COVARIANCE matrix
-    let p_initial = Matrix2::identity() * STATE_COVARIANCE;
-
-    // Create a non-linear KF (EKF)
-    let mut ekf = Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial);
+    // Setup EKF
+    let mut ekf = {
+        // Observation matrix
+        let h = Matrix2::identity();
+        // Observation noise COVARIANCE matrix
+        let r: Covariance = Matrix2::identity() * OBSERVATION_COVARIANCE;
+        // Initial state
+        let x_initial: StateVector = circular_motion(0.0);
+        // The initial state COVARIANCE matrix
+        let p_initial: Covariance = Matrix2::identity() * STATE_COVARIANCE;
+        // Create a non-linear KF (EKF)
+        Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial)
+    };
 
     // Initialize variables needed for plotting
     let mut t_history = Vec::new();
@@ -75,72 +78,83 @@ fn main() {
     let mut measured_state_history = Vec::new();
     let mut predicted_state_history = Vec::new();
 
+    // Iterate over time
     for i in 0..(10.0f64 / dt) as i32 {
-        // time is i + 1 here because that's the time we're predicting for
+        // Define the currrent time
         let time_current = (i as f64) * dt;
-        let time_next = time_current + dt;
 
-        let input = circular_motion_vel(time_current);
-        let input = Vector3::new(input.x, input.y, dt);
+        // Acquire target position
+        let actual_current_state = circular_motion(time_current);
+        let measured_current_state = add_noise(actual_current_state, noise_sigma_squared);
 
-        let actual_next_state = circular_motion(time_next);
-        let measured_next_state = add_noise(actual_next_state, noise_sigma_squared);
+        if i > 0 {
+            // If predicted data is available,
+            // 1. find error between actual and predicted
+            let mut new_large = false;
 
-        // Predict the next state by giving it velocity and delta time
-        let predicted_state = ekf.predict(input).clone();
-
-        // Update EKF with new sensor measurement data
-        ekf.update(measured_next_state);
-
-        // Save the history for plotting
-        t_history.push(time_current);
-        actual_state_history.push((actual_next_state.x, actual_next_state.y));
-        measured_state_history.push((measured_next_state.x, measured_next_state.y));
-        predicted_state_history.push((predicted_state.x, predicted_state.y));
-
-        // Get the error
-        let raw_error = actual_next_state - predicted_state;
-        errors.push(raw_error.x.powi(2));
-        errors.push(raw_error.y.powi(2));
-
-        let error = raw_error.component_div(&actual_next_state) * 100.0;
-        for j in 0..raw_error.len() {
-            let raw_e = raw_error[j].abs();
-
-            if raw_e > largest_error {
-                largest_error = raw_e;
-
-                if !SHOW_STEP_RESULTS {
-                    println!("iteration:        {:?}", i);
-                    println!("current state:    {:?}", ekf.state());
-                    println!("actual_next_state:{:?}", actual_next_state);
-                    println!("measured_next_state: {:?}", measured_next_state);
-                    println!("predicted_state   {:?}", predicted_state);
-                    println!("raw error         {:?}\n", raw_error);
-                }
+            let (predicted_x, predicted_y) = predicted_state_history[i as usize];
+            let error_x: f64 = predicted_x - actual_current_state.x;
+            let error_y: f64 = predicted_y - actual_current_state.y;
+            if error_x.abs() > largest_error {
+                new_large = true;
+                largest_error = error_x.abs();
             }
+            if error_y.abs() > largest_error {
+                new_large = true;
+                largest_error = error_y.abs();
+            }
+            errors.push((error_x.powi(2), error_y.powi(2)));
+            if new_large && !SHOW_STEP_RESULTS {
+                let (p_x, p_y) = predicted_state_history[i as usize];
+                let (e_x, e_y) = errors[i as usize];
+                println!("iteration:                {:?}", i);
+                println!("current state:            {:?}", ekf.state());
+                println!("actual_current_state:     {:?}", actual_current_state);
+                println!("measured_current_state:   {:?}", measured_current_state);
+                println!("predicted_state           [[{p_x}, {p_y}]]");
+                println!("error                     [[{e_x}, {e_y}]]\n");
+            }
+
+            // 2. run correction/update
+            ekf.update(measured_current_state);
+        } else {
+            // Otherwise set intial predicted state to the measured state
+            predicted_state_history.push((measured_current_state.x, measured_current_state.y));
+            errors.push((0.0, 0.0));
         }
 
         if SHOW_STEP_RESULTS {
-            println!("iteration:        {:?}", i);
-            println!("current state:    {:?}", ekf.state());
-            println!("actual_next_state:{:?}", actual_next_state);
-            println!("measured_next_state: {:?}", measured_next_state);
-            println!("predicted_state   {:?}", predicted_state);
-            println!("error             {:?}\n", error);
+            let (p_x, p_y) = predicted_state_history[i as usize];
+            let (e_x, e_y) = errors[i as usize];
+            println!("iteration:                {:?}", i);
+            println!("current state:            {:?}", ekf.state());
+            println!("actual_current_state:     {:?}", actual_current_state);
+            println!("measured_current_state:   {:?}", measured_current_state);
+            println!("predicted_state           [[{p_x}, {p_y}]]");
+            println!("error                     [[{e_x}, {e_y}]]\n");
         }
+
+        // Predict next state
+        let input = circular_motion_vel(time_current);
+        let input = Vector3::new(input.x, input.y, dt);
+        let predicted_state = ekf.predict(input).clone();
+        predicted_state_history.push((predicted_state.x, predicted_state.y));
+
+        // Save the history for plotting
+        t_history.push(time_current);
+        actual_state_history.push((actual_current_state.x, actual_current_state.y));
+        measured_state_history.push((measured_current_state.x, measured_current_state.y));
     }
 
     // Print the results
     println!("------------------------- Input -------------------------");
-    println!("h (Observation matrix):       {:?}", h);
     println!("OBSERVATION_COVARIANCE:       {:?}", OBSERVATION_COVARIANCE);
     println!("STATE_COVARIANCE:             {:?}", STATE_COVARIANCE);
     println!("PROCESS_COVARIANCE:           {:?}", PROCESS_COVARIANCE);
     println!("Time Delta:                   {:?}", dt);
     println!("Sensor noise:                 {:?}", noise_sigma_squared);
     println!("\n------------------------- Error -------------------------");
-    let raw_mse = errors.mean();
+    let raw_mse = errors.into_iter().flat_map(|(a, b)| vec![a, b]).mean();
     println!("Largest:                      {:?}", largest_error);
     println!("MSE:                          {:?}", raw_mse);
     println!("RMSE:                         {:?}\n", raw_mse.sqrt());
@@ -157,7 +171,7 @@ fn main() {
 }
 
 // Step function for circular motion
-fn step_fn(state: Vector2<f64>, input: Vector3<f64>) -> StepReturn<f64, 2> {
+fn step_fn(state: StateVector, input: Vector3<f64>) -> StepReturn<f64, 2> {
     let dt = input.z;
 
     let vx = input.x;
@@ -167,7 +181,7 @@ fn step_fn(state: Vector2<f64>, input: Vector3<f64>) -> StepReturn<f64, 2> {
     let q_covariance = Matrix2::identity() * PROCESS_COVARIANCE;
 
     // Jacobian Vector
-    let jacobian_vec = Vector2::new(vx, vy);
+    let jacobian_vec: StateVector = Vector2::new(vx, vy);
 
     // // Diagonal Jacobian matrix
     // let jacobian = Matrix4::from_diagonal(&jacobian_vec);
