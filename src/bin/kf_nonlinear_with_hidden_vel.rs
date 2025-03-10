@@ -4,27 +4,36 @@ use kfilter2::{add_noise, circular_motion, circular_motion_vel, plot};
 use nalgebra::{Matrix2, Vector2, Vector3};
 use statrs::statistics::Statistics;
 
+/// How much noise to add to the system
 const NOISE_SIGMA_SQUARED: f64 = 0.10;
+
+/// Time step
 const DELTA_TIME: f64 = 0.1;
+
+/// Name of the plot
 const NAME: &str = "Circular Motion Position and Hidden Velocity";
+
 // R matrix (Measurement covariance)
 // Low R -> High Confidence in the sensor
 // High R -> Low Confidence in the sensor
 const OBSERVATION_COVARIANCE: f64 = 0.2;
+
 // P matrix (Initial state covariance)
 // Low P -> High Confidence in the state
 // High P -> Low Confidence in the state
 const STATE_COVARIANCE: f64 = 0.04;
+
 // Q matrix
 // Low Q -> High Confidence in predicted state
 // High Q -> Low Confidence in predicted state
 const PROCESS_COVARIANCE: f64 = 0.1;
+
 // Show step results
 const SHOW_STEP_RESULTS: bool = false;
 
 /// A simple CLI for passing arguments
 #[derive(Parser, Debug)]
-#[command(name = "myapp")]
+#[command(name = "ekf")]
 struct Args {
     #[arg(short, long, default_value_t = NOISE_SIGMA_SQUARED)]
     noise_sigma_squared: f64,
@@ -58,12 +67,12 @@ fn main() {
     let p_initial = Matrix2::identity() * STATE_COVARIANCE;
 
     // Create a non-linear KF (EKF)
-    let mut nonlinear_kalman = Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial);
+    let mut ekf = Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial);
 
     // Initialize variables needed for plotting
     let mut t_history = Vec::new();
     let mut actual_state_history = Vec::new();
-    let mut noisy_state_history = Vec::new();
+    let mut measured_state_history = Vec::new();
     let mut predicted_state_history = Vec::new();
 
     for i in 0..(10.0f64 / dt) as i32 {
@@ -75,18 +84,18 @@ fn main() {
         let input = Vector3::new(input.x, input.y, dt);
 
         let actual_next_state = circular_motion(time_next);
-        let noisy_next_state = add_noise(actual_next_state, noise_sigma_squared);
+        let measured_next_state = add_noise(actual_next_state, noise_sigma_squared);
 
         // Predict the next state by giving it velocity and delta time
-        let predicted_state = nonlinear_kalman.predict(input).clone();
+        let predicted_state = ekf.predict(input).clone();
 
         // Update EKF with new sensor measurement data
-        nonlinear_kalman.update(noisy_next_state);
+        ekf.update(measured_next_state);
 
         // Save the history for plotting
         t_history.push(time_current);
         actual_state_history.push((actual_next_state.x, actual_next_state.y));
-        noisy_state_history.push((noisy_next_state.x, noisy_next_state.y));
+        measured_state_history.push((measured_next_state.x, measured_next_state.y));
         predicted_state_history.push((predicted_state.x, predicted_state.y));
 
         // Get the error
@@ -103,9 +112,9 @@ fn main() {
 
                 if !SHOW_STEP_RESULTS {
                     println!("iteration:        {:?}", i);
-                    println!("current state:    {:?}", nonlinear_kalman.state());
+                    println!("current state:    {:?}", ekf.state());
                     println!("actual_next_state:{:?}", actual_next_state);
-                    println!("noisy_next_state: {:?}", noisy_next_state);
+                    println!("measured_next_state: {:?}", measured_next_state);
                     println!("predicted_state   {:?}", predicted_state);
                     println!("raw error         {:?}\n", raw_error);
                 }
@@ -114,9 +123,9 @@ fn main() {
 
         if SHOW_STEP_RESULTS {
             println!("iteration:        {:?}", i);
-            println!("current state:    {:?}", nonlinear_kalman.state());
+            println!("current state:    {:?}", ekf.state());
             println!("actual_next_state:{:?}", actual_next_state);
-            println!("noisy_next_state: {:?}", noisy_next_state);
+            println!("measured_next_state: {:?}", measured_next_state);
             println!("predicted_state   {:?}", predicted_state);
             println!("error             {:?}\n", error);
         }
@@ -141,7 +150,7 @@ fn main() {
         NAME,
         t_history,
         actual_state_history,
-        noisy_state_history,
+        measured_state_history,
         predicted_state_history,
     )
     .unwrap();
