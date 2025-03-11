@@ -1,7 +1,7 @@
 use clap::{command, Parser};
 use kfilter::{kalman::Kalman1M, system::StepReturn, KalmanFilter, KalmanPredictInput};
-use kfilter2::{add_noise, circular_motion, plot};
-use nalgebra::{Matrix2, Vector2, Vector3};
+use kfilter2::{add_noise, circular_motion_with_vel, plot};
+use nalgebra::{Matrix2, SMatrix, SVector, Vector2, Vector3, Vector4};
 use statrs::statistics::Statistics;
 
 /// How much noise to add to the system
@@ -21,19 +21,19 @@ const OBSERVATION_COVARIANCE: f64 = 0.1;
 // P matrix (Initial state covariance)
 // Low P -> High Confidence in the state
 // High P -> Low Confidence in the state
-const STATE_COVARIANCE: f64 = 0.04;
+const STATE_COVARIANCE: f64 = 0.3;
 
 // Q matrix
 // Low Q -> High Confidence in predicted state
 // High Q -> Low Confidence in predicted state
-const PROCESS_COVARIANCE: f64 = 0.04;
+const PROCESS_COVARIANCE: f64 = 0.85;
 
 // Show step results
 const SHOW_STEP_RESULTS: bool = false;
 
 /// type alias for state vector
-type StateVector = Vector2<f64>;
-type Covariance = Matrix2<f64>;
+type StateVector = SVector<f64, 4>;
+type Covariance = SMatrix<f64, 4, 4>;
 
 /// A simple CLI for passing arguments
 #[derive(Parser, Debug)]
@@ -59,17 +59,29 @@ fn main() {
     let mut errors: Vec<(f64, f64)> = Vec::new();
 
     // Initialize state
-    let x_initial = circular_motion(0.0);
+    let x_initial = circular_motion_with_vel(0.0);
+    let x_initial = Vector4::new(x_initial.x, x_initial.y, 0.0, 0.0);
     let mut state = State::new(x_initial.x, x_initial.y, 0.0);
 
     // Setup EKF
     let mut ekf = {
         // Observation matrix
-        let h = Matrix2::identity();
+        // | 1 0 0 0 |
+        // | 0 1 0 0 |
+        let mut h = SMatrix::<f64, 2, 4>::zeros();
+        h[(0, 0)] = 1.0;
+        h[(1, 1)] = 1.0;
+
         // Observation noise COVARIANCE matrix
-        let r: Covariance = Matrix2::identity() * OBSERVATION_COVARIANCE;
+        let r = Matrix2::identity() * OBSERVATION_COVARIANCE;
+
         // The initial state COVARIANCE matrix
-        let p_initial: Covariance = Matrix2::identity() * STATE_COVARIANCE;
+        // | X 0 0 0 |
+        // | 0 X 0 0 |
+        // | 0 0 X 0 |
+        // | 0 0 0 X |
+        let p_initial: Covariance = Covariance::identity() * STATE_COVARIANCE;
+
         // Create a non-linear KF (EKF)
         Kalman1M::new_ekf_with_input(step_fn, h, r, x_initial, p_initial)
     };
@@ -86,8 +98,10 @@ fn main() {
         let time_current = (i as f64) * dt;
 
         // Acquire target position
-        let actual_current_state = circular_motion(time_current);
+        let actual_current_state = circular_motion_with_vel(time_current);
         let measured_current_state = add_noise(actual_current_state, noise_sigma_squared);
+        let measured_current_state =
+            Vector2::new(measured_current_state.x, measured_current_state.y);
 
         if i > 0 {
             // If predicted data is available,
@@ -109,34 +123,39 @@ fn main() {
             if new_large && !SHOW_STEP_RESULTS {
                 let (p_x, p_y) = predicted_state_history[i as usize];
                 let (e_x, e_y) = errors[i as usize];
-                println!("iteration:                {:?}", i);
-                println!("current state:            {:?}", ekf.state());
-                println!("actual_state:             {:?}", actual_current_state);
-                println!("measured_state:           {:?}", measured_current_state);
-                println!("predicted_state           [[{p_x}, {p_y}]]");
-                println!("error                     [[{e_x}, {e_y}]]\n");
+                println!("iteration:                {:.4?}", i);
+                println!("current state:            {:.4?}", ekf.state());
+                println!("actual_state:             {:.4?}", actual_current_state);
+                println!("measured_state:           {:.4?}", measured_current_state);
+                println!("predicted_state           [[{:.4?}, {:.4?}]]", p_x, p_y);
+                println!("error                     [[{:.4?}, {:.4?}]]\n", e_x, e_y);
             }
 
             // 2. run correction/update
             let current_state = ekf.update(measured_current_state);
 
+            if new_large && !SHOW_STEP_RESULTS {
+                println!("updated current state:    {:?}\n", current_state);
+            }
+
             // 3. Update "state" with new state
             state.update(current_state.x, current_state.y, time_current);
         } else {
             // Otherwise set intial predicted state to the measured state
-            predicted_state_history.push((measured_current_state.x, measured_current_state.y));
+            let current_state = ekf.update(measured_current_state);
+            predicted_state_history.push((current_state.x, current_state.y));
             errors.push((0.0, 0.0));
         }
 
         if SHOW_STEP_RESULTS {
             let (p_x, p_y) = predicted_state_history[i as usize];
             let (e_x, e_y) = errors[i as usize];
-            println!("iteration:                {:?}", i);
-            println!("current state:            {:?}", ekf.state());
-            println!("actual__state:            {:?}", actual_current_state);
-            println!("measured_state:           {:?}", measured_current_state);
-            println!("predicted_state           [[{p_x}, {p_y}]]");
-            println!("error                     [[{e_x}, {e_y}]]\n");
+            println!("iteration:                {:.4?}", i);
+            println!("current state:            {:.4?}", ekf.state());
+            println!("actual_state:             {:.4?}", actual_current_state);
+            println!("measured_state:           {:.4?}", measured_current_state);
+            println!("predicted_state           [[{:.4?}, {:.4?}]]", p_x, p_y);
+            println!("error                     [[{:.4?}, {:.4?}]]\n", e_x, e_y);
         }
 
         // Predict next state
@@ -176,27 +195,24 @@ fn main() {
 }
 
 // Step function for circular motion
-fn step_fn(state: StateVector, input: Vector3<f64>) -> StepReturn<f64, 2> {
+fn step_fn(state: StateVector, input: Vector3<f64>) -> StepReturn<f64, 4> {
+    // Extract the input variables
     let dt = input.z;
 
-    let vx = input.x;
-    let vy = input.y;
-
     // Process Covariance Matrix
-    let q_covariance = Matrix2::identity() * PROCESS_COVARIANCE;
+    let q_covariance: Covariance = Covariance::identity() * PROCESS_COVARIANCE;
 
-    // Jacobian Vector
-    let jacobian_vec: StateVector = Vector2::new(vx, vy);
-
-    // // Diagonal Jacobian matrix
-    // let jacobian = Matrix4::from_diagonal(&jacobian_vec);
-
-    // First Column Jacobian
-    let mut jacobian = Matrix2::zeros();
-    jacobian.column_mut(0).copy_from(&jacobian_vec);
+    // Prediction Jacobian Vector (F or A)
+    // | 1 0 dt 0 |
+    // | 0 1 0 dt |
+    // | 0 0 1 0  |
+    // | 0 0 0 1  |
+    let mut jacobian = SMatrix::<f64, 4, 4>::identity();
+    jacobian[(0, 2)] = dt;
+    jacobian[(1, 3)] = dt;
 
     StepReturn {
-        state: state + jacobian_vec * dt,
+        state: jacobian * state,
         jacobian,
         covariance: q_covariance,
     }
@@ -242,21 +258,5 @@ impl State {
         let vx = (self.current_x - self.previous_x) / dt;
         let vy = (self.current_y - self.previous_y) / dt;
         Vector2::new(vx, vy)
-    }
-
-    /// Get the current state
-    pub fn current(&self) -> StateVector {
-        Vector2::new(self.current_x, self.current_y)
-    }
-
-    /// Get the previous state
-    pub fn previous(&self) -> StateVector {
-        Vector2::new(self.previous_x, self.previous_y)
-    }
-}
-
-impl From<State> for StateVector {
-    fn from(state: State) -> Self {
-        Vector2::new(state.current_x, state.current_y)
     }
 }
