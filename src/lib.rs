@@ -1,3 +1,7 @@
+pub mod polar;
+
+use core::f64;
+
 use nalgebra::{SVector, Vector2, Vector4, Vector6};
 use plotters::prelude::*;
 
@@ -58,17 +62,7 @@ pub fn plot(
     let t_min = t_history[0];
     let t_max = t_history[t_history.len() - 1];
 
-    let mut chart = ChartBuilder::on(&root)
-        .caption(&name, ("sans-serif", 40))
-        .margin(10)
-        .x_label_area_size(30)
-        .y_label_area_size(30)
-        .build_cartesian_2d(t_min..t_max, -1.5..1.5)?;
-
-    chart.configure_mesh().draw()?;
-
-    // Draw multiple series on the same plot
-    // ACTUAL state
+    // Prepare data for plotting
     let x_history_actual: Vec<(f64, f64)> = t_history
         .iter()
         .zip(actual_state_history.iter())
@@ -79,13 +73,6 @@ pub fn plot(
         .zip(actual_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
-    chart
-        .draw_series(LineSeries::new(x_history_actual, &BLACK))?
-        .label("actual_state")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
-    chart.draw_series(LineSeries::new(y_history_actual, &BLACK))?;
-
-    // PREDICTED state
     let x_history_predicted: Vec<(f64, f64)> = t_history
         .iter()
         .zip(predicted_state_history.iter())
@@ -96,13 +83,6 @@ pub fn plot(
         .zip(predicted_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
-    chart
-        .draw_series(LineSeries::new(x_history_predicted, &RED))?
-        .label("predicted_state")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-    chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
-
-    // MEASURED state
     let x_history_measured: Vec<(f64, f64)> = t_history
         .iter()
         .zip(measured_state_history.iter())
@@ -113,6 +93,39 @@ pub fn plot(
         .zip(measured_state_history.iter())
         .map(&|(&t, &(_, y))| (t, y))
         .collect();
+
+    let (y_min, y_max) = {
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+        for (y1, y2) in actual_state_history.iter() {
+            y_min = y_min.min(*y1).min(*y2);
+            y_max = y_max.max(*y1).max(*y2);
+        }
+        (
+            y_min - (0.1 * y_min).max(0.5),
+            y_max + (0.1 * y_max).min(0.5),
+        )
+    };
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption(&name, ("sans-serif", 40))
+        .margin(10)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_cartesian_2d(t_min..t_max, y_min..y_max)?;
+    chart.configure_mesh().draw()?;
+
+    // Plot
+    chart
+        .draw_series(LineSeries::new(x_history_actual, &BLACK))?
+        .label("actual_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+    chart.draw_series(LineSeries::new(y_history_actual, &BLACK))?;
+    chart
+        .draw_series(LineSeries::new(x_history_predicted, &RED))?
+        .label("predicted_state")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+    chart.draw_series(LineSeries::new(y_history_predicted, &RED))?;
     chart
         .draw_series(LineSeries::new(x_history_measured, &BLUE))?
         .label("measured_state")
