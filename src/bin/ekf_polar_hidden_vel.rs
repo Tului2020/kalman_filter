@@ -32,12 +32,16 @@ const PROCESS_COVARIANCE: f64 = 0.04;
 const SHOW_STEP_RESULTS: bool = false;
 
 // Polar Parameters
+const INITIAL_THETA: f64 = 0.0;
 const RADIUS: f64 = 1.0;
 const RPM: f64 = 2.0;
 
+// Graph Parameters
+const UPPER_TIME: f64 = 10.0f64;
+
 /// type alias for state vector
-type StateVector = SVector<f64, 3>;
-type Covariance = SMatrix<f64, 3, 3>;
+type StateVector = SVector<f64, 4>;
+type Covariance = SMatrix<f64, 4, 4>;
 
 /// A simple CLI for passing arguments
 #[derive(Parser, Debug)]
@@ -63,7 +67,7 @@ fn main() {
     let mut errors: Vec<(f64, f64)> = Vec::new();
 
     // Initialize state
-    let polar_state = PolarCircular::new(RADIUS, RPM, NOISE_SIGMA_SQUARED);
+    let polar_state = PolarCircular::new(RADIUS, INITIAL_THETA, RPM, NOISE_SIGMA_SQUARED);
     let x_initial = polar_state.initial_measurement();
     let mut state_history = State::new(x_initial.x, x_initial.y, 0.0);
 
@@ -72,7 +76,7 @@ fn main() {
         // Observation matrix
         // | 1 0 0 0 |
         // | 0 1 0 0 |
-        let mut h = SMatrix::<f64, 2, 3>::zeros();
+        let mut h = SMatrix::<f64, 2, 4>::zeros();
         h[(0, 0)] = 1.0;
         h[(1, 1)] = 1.0;
 
@@ -97,7 +101,7 @@ fn main() {
     let mut predicted_state_history = Vec::new();
 
     // Iterate over time
-    for i in 0..(10.0f64 / dt) as i32 {
+    for i in 0..(UPPER_TIME / dt) as i32 {
         // Define the currrent time
         let time_current = (i as f64) * dt;
 
@@ -137,10 +141,6 @@ fn main() {
 
             // 2. run correction/update
             let current_state = ekf.update(measured_current_state);
-
-            if new_large && !SHOW_STEP_RESULTS {
-                println!("updated current state:    {:?}\n", current_state);
-            }
 
             // 3. Update "state_history" with new state
             state_history.update(current_state.x, current_state.y, time_current);
@@ -198,16 +198,18 @@ fn main() {
 }
 
 // Step function for circular motion
-fn step_fn(state: StateVector, input: Vector1<f64>) -> StepReturn<f64, 3> {
+fn step_fn(state: StateVector, input: Vector1<f64>) -> StepReturn<f64, 4> {
     // Process Covariance Matrix
     let q_covariance: Covariance = Covariance::identity() * PROCESS_COVARIANCE;
 
     // Prediction Jacobian Vector (F or A)
-    // | 1 0 0  |
-    // | 0 1 dt |
-    // | 0 0 1  |
-    let mut jacobian = SMatrix::<f64, 3, 3>::identity();
-    jacobian[(1, 2)] = input.x;
+    // | 1 0 0 0  |
+    // | 0 1 0 dt |
+    // | 0 0 0 0  |
+    // | 0 0 0 1  |
+    let mut jacobian = SMatrix::<f64, 4, 4>::identity();
+    // jacobian[(2, 2)] = 0.0;
+    jacobian[(1, 3)] = input.x;
 
     StepReturn {
         state: jacobian * state,
