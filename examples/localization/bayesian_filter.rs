@@ -152,6 +152,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     let history = run(algo);
     let len = history.z.len();
 
+    // Get RMSE
+    let mut mse_errors: Vec<f64> = Vec::new();
+    for i in 0..len {
+        let (true_x, true_y) = history.x_true[i];
+        let (est_x, est_y) = history.x_est[i];
+
+        mse_errors.push((true_x - true_y).powi(2));
+        mse_errors.push((est_y - est_x).powi(2));
+    }
+    println!(
+        "RMSE: {}",
+        mse_errors.iter().sum::<f64>().sqrt() / len as f64
+    );
+
     // Create output directory if it didnt exist
     std::fs::create_dir_all("./img")?;
 
