@@ -19,8 +19,8 @@ serde = { version = "1.0", features = ["derive"] }
 rustc-hash = "1.1"
 rand = "0.8"
 rand_distr = "0.4"
-russell_lab = "0.7"
-russell_sparse = "0.7"
+# russell_lab = "0.7"
+# russell_sparse = "0.7"
 plotpy = "0.5"
 rayon = "1.7"
 faer = "0.18" # fast linear algebra
@@ -66,11 +66,6 @@ path = "examples/mapping/pose_graph_optimization.rs"
 name = "inverted_pendulum"
 path = "examples/control/inverted_pendulum.rs"
 
-
 [[bench]]
 name = "kalman_filter"
-harness = false
-
-[[bench]]
-name = "graph_slam"
 harness = false
