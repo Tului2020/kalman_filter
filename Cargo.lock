@@ -942,6 +942,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalman_filter"
+version = "0.1.5"
+dependencies = [
+ "approx",
+ "criterion",
+ "csv",
+ "dialoguer",
+ "faer",
+ "nalgebra",
+ "plotpy",
+ "plotters",
+ "rand",
+ "rand_distr",
+ "rayon",
+ "rustc-hash",
+ "serde",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1465,25 +1484,6 @@ name = "regex-syntax"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
-
-[[package]]
-name = "robotics"
-version = "0.1.5"
-dependencies = [
- "approx",
- "criterion",
- "csv",
- "dialoguer",
- "faer",
- "nalgebra",
- "plotpy",
- "plotters",
- "rand",
- "rand_distr",
- "rayon",
- "rustc-hash",
- "serde",
-]
 
 [[package]]
 name = "rustc-hash"
